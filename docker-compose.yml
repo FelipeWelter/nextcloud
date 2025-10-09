@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   db:
     image: mariadb:11
@@ -15,7 +17,7 @@ services:
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 --silent || exit 1"]
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uroot -p\"$${MARIADB_ROOT_PASSWORD}\" --silent || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -30,15 +32,22 @@ services:
     ports:
       - "8080:80"
     environment:
+      # Conexão com o DB
       MYSQL_HOST: db
       MYSQL_DATABASE: ${MARIADB_DATABASE}
       MYSQL_USER: ${MARIADB_USER}
       MYSQL_PASSWORD: ${MARIADB_PASSWORD}
+
+      # Domínios confiáveis (IP ou domínio SEM porta)
       NEXTCLOUD_TRUSTED_DOMAINS: ${TRUSTED_DOMAINS}
-      OVERWRITEHOST: ${SERVER_IP}:8080
-      OVERWRITEPROTOCOL: http
+
+      # Ajustes úteis (opcionais)
       PHP_MEMORY_LIMIT: 1024M
-      UPLOAD_LIMIT: 1024M
+      UPLOAD_MAX_SIZE: 1024M
+
+      # Se for usar proxy/HTTPS, descomente e preencha:
+      # OVERWRITEHOST: ${OVERWRITEHOST}
+      # OVERWRITEPROTOCOL: ${OVERWRITEPROTOCOL}
     volumes:
       - nc_data:/var/www/html
 
