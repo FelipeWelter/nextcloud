@@ -1,5 +1,57 @@
+version: "3.9"
+
+networks:
+  traefik:
+    external: true
+    name: traefik
+  nc_internal:
+    driver: bridge
+
+volumes:
+  nc_app:
+  nc_data:
+  nc_db:
+  nc_redis:
+
+services:
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    command: >
+      --transaction-isolation=READ-COMMITTED
+      --binlog-format=ROW
+      --innodb_read_only_compressed=OFF
+    environment:
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - nc_db:/var/lib/mysql
+    networks:
+      - nc_internal
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - nc_redis:/data
+    networks:
+      - nc_internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   app:
-    image: nextcloud:latest   # imagem Apache (mais simples atrás do Traefik)
+    image: nextcloud:latest
     restart: unless-stopped
     depends_on:
       db:
@@ -7,75 +59,40 @@
       redis:
         condition: service_healthy
     environment:
-      # --- Banco/Redis ---
       MYSQL_HOST: db
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       REDIS_HOST: redis
-
-      # --- Proxy / Subpasta / Domínio ---
-      # O Nextcloud precisa gerar links com /nextcloud
       OVERWRITEWEBROOT: /nextcloud
-      # Se seu Traefik termina TLS, mantenha https:
       OVERWRITEPROTOCOL: https
-      # Se acessa por domínio, defina aqui. Se for só por IP, pode omitir.
-      # OVERWRITEHOST: cloud.seudominio.com.br
-
-      # Reescrita base do Apache/htaccess (aplica depois com OCC)
       HTACCESS_REWRITE_BASE: /nextcloud
-
-      # Proxies confiáveis (ajuste para sua rede)
       TRUSTED_PROXIES: 172.16.0.0/12,10.0.0.0/8,192.168.0.0/16
-      # Evita IP incorreto em logs quando há proxy reverso
       APACHE_DISABLE_REWRITE_IP: "1"
-
-      # Limites PHP/Upload (opcional)
       PHP_MEMORY_LIMIT: ${PHP_MEMORY_LIMIT}
       PHP_UPLOAD_LIMIT: ${UPLOAD_MAX_SIZE}
-
-      # Provisionamento automático (opcional só no 1º deploy)
-      # NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER}
-      # NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
-
     volumes:
       - nc_app:/var/www/html
       - nc_data:/var/www/html/data
-
     networks:
       - traefik
       - nc_internal
-
     labels:
       - traefik.enable=true
-
-      # --- HTTP (80) – roteia só quando caminho começa com /nextcloud ---
       - traefik.http.routers.nc-path.entrypoints=web
       - traefik.http.routers.nc-path.rule=PathPrefix(`/nextcloud`)
-
-      # --- HTTPS (443) – se você já usa TLS no Traefik ---
       - traefik.http.routers.nc-path-secure.entrypoints=websecure
       - traefik.http.routers.nc-path-secure.rule=PathPrefix(`/nextcloud`)
       - traefik.http.routers.nc-path-secure.tls=true
       - traefik.http.routers.nc-path-secure.tls.certresolver=${TRAEFIK_CERTRESOLVER}
-
-      # --- Strip do prefixo /nextcloud antes de chegar no Apache ---
       - traefik.http.middlewares.nc-strip.stripPrefix.prefixes=/nextcloud
-
-      # --- Forçar barra final (/nextcloud -> /nextcloud/) ---
       - traefik.http.middlewares.nc-slash.redirectregex.regex=^(.*/nextcloud)$$
       - traefik.http.middlewares.nc-slash.redirectregex.replacement=$${1}/
       - traefik.http.middlewares.nc-slash.redirectregex.permanent=true
-
-      # --- Encadear middlewares ---
       - traefik.http.routers.nc-path.middlewares=nc-slash@docker,nc-strip@docker
       - traefik.http.routers.nc-path-secure.middlewares=nc-slash@docker,nc-strip@docker
-
-      # --- Porta interna do Apache no container Nextcloud ---
       - traefik.http.services.nc-svc.loadbalancer.server.port=80
       - traefik.http.routers.nc-path.service=nc-svc
       - traefik.http.routers.nc-path-secure.service=nc-svc
-
-      # --- Prioridade para ganhar de rotas genéricas "/" ---
       - traefik.http.routers.nc-path.priority=100
       - traefik.http.routers.nc-path-secure.priority=100
