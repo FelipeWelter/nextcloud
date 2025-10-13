@@ -4,7 +4,7 @@ networks:
   traefik:
     external: true
     name: traefik
-  nc_internal:         # <— rede interna só do Nextcloud
+  nc_internal:
     driver: bridge
 
 volumes:
@@ -16,7 +16,6 @@ volumes:
 services:
   db:
     image: mariadb:11
-    # container_name: nc_db   # (recomendo REMOVER container_name p/ evitar efeitos colaterais de DNS)
     restart: unless-stopped
     command: >
       --transaction-isolation=READ-COMMITTED
@@ -37,7 +36,7 @@ services:
     networks:
       nc_internal:
         aliases:
-          - db            # <— garante que o nome "db" exista na rede interna
+          - db
 
   redis:
     image: redis:7-alpine
@@ -50,15 +49,14 @@ services:
 
   app:
     image: nextcloud:latest
-    # container_name: nc_app   # (idem, melhor não fixar)
     restart: unless-stopped
     depends_on:
       db:
-        condition: service_healthy   # espera DB ficar saudável
+        condition: service_healthy
       redis:
         condition: service_started
     environment:
-      - MYSQL_HOST=db                # <— usa o alias acima
+      - MYSQL_HOST=db
       - MYSQL_DATABASE=${MYSQL_DATABASE}
       - MYSQL_USER=${MYSQL_USER}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
@@ -78,8 +76,8 @@ services:
       - nc_app:/var/www/html
       - nc_data:/var/www/html/data
     networks:
-      - nc_internal      # <— fala com db/redis por aqui
-      - traefik          # <— entra/saída HTTP pelo Traefik
+      - nc_internal
+      - traefik
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.nextcloud.rule=PathPrefix(`/nextcloud`)"
@@ -104,3 +102,21 @@ services:
       - nc_data:/var/www/html/data
     networks:
       - nc_internal
+
+  collabora:
+    image: collabora/code:latest
+    restart: unless-stopped
+    environment:
+      - extra_params=--o:ssl.enable=false --o:security.seccomp=false
+      # O host do seu Nextcloud (sem caminho). Use http pois seu entrypoint é "web".
+      - aliasgroup1=http://72.60.152.69
+      # opcional: auth básica da UI admin do CODE
+      - username=${COLLABORA_ADMIN_USER:-admin}
+      - password=${COLLABORA_ADMIN_PASS:-changeMe123}
+    networks:
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.collabora.rule=PathPrefix(`/lo`)"
+      - "traefik.http.routers.collabora.entrypoints=web"
+      - "traefik.http.services.collabora.loadbalancer.server.port=9980"
