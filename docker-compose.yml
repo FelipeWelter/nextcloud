@@ -61,22 +61,21 @@ services:
 
       REDIS_HOST: redis
 
-      # domínio e URL base
-      OVERWRITEHOST: ${NEXTCLOUD_DOMAIN}
-      OVERWRITEPROTOCOL: ${NEXTCLOUD_OVERWRITEPROTO}
+      # Ajustes para rodar diretamente no IP
+      OVERWRITEHOST: ${NEXTCLOUD_HOST}
+      OVERWRITEPROTOCOL: http
       OVERWRITEWEBROOT: /
       HTACCESS_REWRITE_BASE: /
 
-      # admin (somente na primeira instalação)
+      NEXTCLOUD_TRUSTED_DOMAINS: ${NEXTCLOUD_TRUSTED_DOMAINS}
+
+      # Admin (apenas na instalação inicial)
       NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER}
       NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
 
-      # trusted domains
-      NEXTCLOUD_TRUSTED_DOMAINS: ${NEXTCLOUD_TRUSTED_DOMAINS}
-
-      # limites PHP / upload
       PHP_MEMORY_LIMIT: ${PHP_MEMORY_LIMIT}
       PHP_UPLOAD_LIMIT: ${UPLOAD_MAX_SIZE}
+
     volumes:
       - nc_app:/var/www/html
       - nc_data:/var/www/html/data
